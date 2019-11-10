@@ -11,23 +11,146 @@ import robot.MapPointer;
 import robot.Obstruction;
 import robot.TargetActor;
 
+import javax.swing.*;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-public class AStarPlanner implements MotionPlanner {
+public class AStarPlanner extends Actor implements MotionPlanner  {
 
+    public boolean isFinishBuild = false;
+
+    // 原地图的信息
     private Grid<Actor> robotGrid;
     private Location start;
     private Location target;
+
+    // 规划用地图的信息
+    private Grid<Actor> plannerGrid;
+    private CellMap cellMap;
     private Map<Location, Location> parentMap;
+    private SortedSet<Location> openSet;
+    private Set<Location> closeSet;
 
     public AStarPlanner(Location start, Location target, Grid<Actor> robotGrid) {
         this.robotGrid = robotGrid;
         this.start = start;
         this.target = target;
+        init();
     }
 
+    private void init() {
+        isFinishBuild = false;
+
+        if (robotGrid.getNumRows() == -1) {
+            plannerGrid = new UnboundedGrid<>();
+        } else {
+            plannerGrid = new BoundedGrid<>(robotGrid.getNumRows(), robotGrid.getNumCols());
+        }
+        new ActorWorld(plannerGrid).show();
+        this.putSelfInGrid(plannerGrid, start);
+
+        // 存储地图用的信息
+        cellMap = new CellMap();
+        openSet = new TreeSet<>((loc1, loc2) -> {
+            Cell cell1 = cellMap.get(loc1);
+            Cell cell2 = cellMap.get(loc2);
+            if (cell1.fValue == -1 && cell2.fValue != -1) return 1;
+            if (cell2.fValue == -1 && cell1.fValue != -1) return 1;
+            if (cell1.fValue != cell2.fValue) return cell1.fValue - cell2.fValue;
+            if (cell1.hValue != cell2.hValue) return cell1.hValue - cell2.hValue;
+            if (cell1.gValue != cell2.gValue) return cell1.gValue - cell2.gValue;
+            if (loc1.getRow() != loc2.getRow()) return loc1.getRow() - loc2.getRow();
+            if (loc1.getCol() != loc2.getCol()) return loc1.getCol() - loc2.getCol();
+            return 0;
+        });
+        closeSet = new HashSet<>();
+
+        // 初始化加入起点
+        Cell startCell = new Cell(start);
+        startCell.gValue = 0;
+        startCell.hValue = Math.abs(start.getRow() - target.getRow()) + Math.abs(start.getCol() - target.getCol());
+        startCell.fValue = startCell.gValue + startCell.hValue;
+        cellMap.put(start, startCell);
+        openSet.add(start);
+    }
+
+    @Override
+    public void act() {
+        if (isFinishBuild) {
+            JOptionPane.showMessageDialog(null, "已经完成规划");
+            return;
+        }
+
+        if (openSet.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "OpenSet为空");
+            return;
+        }
+
+        Location curr = openSet.first();
+        System.out.println("关注点：" + curr.toString());
+        if (curr.equals(target)) {
+            isFinishBuild = true;
+            // 终点的标志换一下颜色
+            plannerGrid.get(target).setColor(Color.green);
+
+            parentMap = new HashMap<>();
+            Cell it = cellMap.get(target);
+            while (it.parent != null) {
+                parentMap.put(it.parent, it.loc);
+                it = cellMap.get(it.parent);
+            }
+            JOptionPane.showMessageDialog(null, "完成规划，请在Robot所在世界操作");
+            return;
+        }
+
+        plannerGrid.get(curr).setColor(Color.RED);
+        openSet.remove(curr);
+        closeSet.add(curr);
+
+        Cell cell = cellMap.get(curr);
+        List<Location> neighbors = getNeighbors(curr);
+        for (Location neighLoc : neighbors) {
+            // 位于closeSet或者地图外或者障碍物不需要进行处理
+            if (closeSet.contains(neighLoc))
+                continue;
+            else if (!robotGrid.isValid(neighLoc)) {
+                closeSet.add(neighLoc);
+                continue;
+            } else if (robotGrid.get(neighLoc) instanceof Obstruction) {
+                plannerGrid.put(neighLoc, new Obstruction());
+                closeSet.add(neighLoc);
+                continue;
+            }
+
+            Cell neighCell = cellMap.get(neighLoc);
+            if (neighCell.hValue == -1)
+                neighCell.hValue = Math.abs(neighLoc.getRow() - target.getRow()) + Math.abs(neighLoc.getCol() - target.getCol());
+
+            // 计算以当前点为父节点时，邻居的一众数值
+            int gValue = cell.gValue + (neighLoc.getDirectionToward(curr) % 90 == 0 ? 10 : 14);
+            int fValue = neighCell.hValue + gValue;
+
+            if (neighCell.parent == null || neighCell.fValue > fValue) {
+                neighCell.parent = curr;
+                neighCell.gValue = gValue;
+                neighCell.fValue = fValue;
+
+                // 展示部分
+                Actor neighPointer = plannerGrid.get(neighCell.loc);
+                if (neighPointer == null) {
+                    neighPointer = new MapPointer();
+                    neighPointer.putSelfInGrid(plannerGrid, neighCell.loc);
+                }
+                neighPointer.setDirection(neighCell.loc.getDirectionToward(neighCell.parent));
+            }
+
+            openSet.add(neighLoc);
+        }
+    }
+
+
+/*
     private void buildPath() {
         // 初始化展示
         CellMap cellMap = new CellMap();
@@ -123,6 +246,7 @@ public class AStarPlanner implements MotionPlanner {
             it = cellMap.get(it.parent);
         }
     }
+*/
 
     // 获取一个点的8个邻居
     private List<Location> getNeighbors(Location loc) {
@@ -140,8 +264,7 @@ public class AStarPlanner implements MotionPlanner {
 
     @Override
     public Location next(Location current) {
-        if (parentMap == null)
-            buildPath();
+//        if (parentMap == null) buildPath();
 
         if (parentMap.containsKey(current))
             return parentMap.get(current);

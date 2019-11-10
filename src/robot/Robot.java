@@ -6,7 +6,6 @@ import info.gridworld.actor.Flower;
 import info.gridworld.grid.Grid;
 import info.gridworld.grid.Location;
 import planner.AStarPlanner;
-import planner.MotionPlanner;
 
 import javax.swing.*;
 import java.awt.*;
@@ -14,7 +13,7 @@ import java.awt.*;
 public class Robot extends Bug {
 
     private Location target;
-    private MotionPlanner planner;
+    private AStarPlanner planner;
 
     public void setTarget(Location target) {
         // 已经有终点
@@ -40,6 +39,12 @@ public class Robot extends Bug {
         // 已经抵达终点
         if (current.equals(target)) {
             JOptionPane.showMessageDialog(null, "已经抵达终点");
+            return;
+        }
+
+        // 计划未完成
+        if (!planner.isFinishBuild) {
+            JOptionPane.showMessageDialog(null, "未完成决策步骤");
             return;
         }
 
